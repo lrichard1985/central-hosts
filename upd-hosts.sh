@@ -3,8 +3,8 @@ set -e
 
 # Forrás URL-ek tömbje
 sources="
-  https://list.iblocklist.com/?list=qlprgwgdkojunfdlzsiv&fileformat=hosts&archiveformat=7z
-  https://list.iblocklist.com/?list=cgbdjfsybgpgyjpqhsnd&fileformat=hosts&archiveformat=7z
+  https://list.iblocklist.com/?list=qlprgwgdkojunfdlzsiv&fileformat=hosts&archiveformat=zip
+  https://list.iblocklist.com/?list=cgbdjfsybgpgyjpqhsnd&fileformat=hosts&archiveformat=zip
   https://filters.hufilter.hu/hufilter-hosts.txt
   https://someonewhocares.org/hosts/zero/hosts
   https://someonewhocares.org/hosts/ipv6zero/hosts/
@@ -13,26 +13,28 @@ sources="
   https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt
   https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi-compressed.txt
   https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/hosts/light.txt
-  https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/hosts/light-compressed.txt
   https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/hosts/tif.txt
-  https://raw.githubusercontent.com/hagezi/dns-blocklists/refs/heads/main/hosts/tif-compressed.txt
   https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/doh.txt
-  https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/doh-compressed.txt
   https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/native.tiktok.extended.txt
 "
 
-# Ideiglenes fájlok és könyvtárak
+# Kimeneti fájl
+output_file="combined_hosts"
+
+# Ideiglenes könyvtár létrehozása
 temp_dir="$(mktemp -d)"
 temp_file="$temp_dir/combined_hosts.tmp"
-output_file="combined_hosts"
 
 # Üres ideiglenes fájl létrehozása
 > "$temp_file"
 
 # Függőségek ellenőrzése
-command -v curl >/dev/null 2>&1 || { echo >&2 "A 'curl' nincs telepítve. Telepítsd, majd próbáld újra."; exit 1; }
-command -v unzip >/dev/null 2>&1 || { echo >&2 "Az 'unzip' nincs telepítve. Telepítsd, majd próbáld újra."; exit 1; }
-command -v 7z >/dev/null 2>&1 || { echo >&2 "A '7z' nincs telepítve. Telepítsd a 'p7zip-full' csomagot, majd próbáld újra."; exit 1; }
+for cmd in curl unzip; do
+  command -v "$cmd" >/dev/null 2>&1 || {
+    echo >&2 "A '$cmd' nincs telepítve. Telepítsd, majd próbáld újra."
+    exit 1
+  }
+done
 
 # Hosts fájlok letöltése és feldolgozása
 for url in $sources; do
@@ -40,18 +42,19 @@ for url in $sources; do
   filename=$(basename "$url")
   filepath="$temp_dir/$filename"
 
-  # Fájl letöltése
-  curl -sSL "$url" -o "$filepath"
+  # Fájl letöltése hibakezeléssel
+  if curl -fsSL "$url" -o "$filepath"; then
+    echo "Sikeres letöltés: $filename"
+  else
+    echo "Hiba a letöltés során: $url. Az előző fájl kerül felhasználásra, ha elérhető."
+    continue
+  fi
 
   # Fájl kiterjesztésének vizsgálata és kicsomagolás
   case "$filename" in
     *.zip)
       echo "ZIP fájl kicsomagolása: $filename"
       unzip -p "$filepath" >> "$temp_file"
-      ;;
-    *.7z)
-      echo "7Z fájl kicsomagolása: $filename"
-      7z e -so "$filepath" >> "$temp_file"
       ;;
     *)
       echo "Nem tömörített fájl feldolgozása: $filename"
@@ -60,8 +63,10 @@ for url in $sources; do
   esac
 done
 
-# Redundáns sorok eltávolítása
-sort -u "$temp_file" > "$output_file"
+# IP-címek cseréje és nem kívánt sorok eltávolítása
+sed -e 's/^127\.0\.0\.1/0.0.0.0/' \
+    -e '/family\.adguard/d' \
+    -e '/opendns/d' "$temp_file" | sort -u > "$output_file"
 
 # Ideiglenes fájlok törlése
 rm -rf "$temp_dir"
