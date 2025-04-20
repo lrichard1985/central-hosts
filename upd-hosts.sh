@@ -72,7 +72,7 @@ for url in $sources; do
 done
 # IP-címek cseréje és nem kívánt sorok eltávolítása
 sed -e 's/^127\.0\.0\.1/0.0.0.0/' \
-    -e '/family\.adguard/d' \
+    -e '/family\.adguard\cleanbrowsing/d' \
     -e '/opendns/d' "$temp_file" | sort -u > "$output_file"
 # Ideiglenes fájlok törlése
 rm -rf "$temp_dir"
